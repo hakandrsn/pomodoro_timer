@@ -1,10 +1,193 @@
 ﻿<!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8">
-  <title>$Title$</title>
+    <meta charset="UTF-8">
+    <title>Pomodoro Timer</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <style>
+        .drag-area {
+            -webkit-app-region: drag;
+            height: 32px;
+        }
+        input::-webkit-outer-spin-button,
+        input::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        .always-on-top-btn {
+            -webkit-app-region: no-drag; /* Sürüklemeyi devre dışı bırak */
+        }
+    </style>
 </head>
-<body>
-$END$
+<body class="bg-gray-900 text-white">
+<audio id="workSound" src="public/audio/work.mp3"></audio>
+<audio id="breakSound" src="public/audio/break.mp3"></audio>
+<div class="h-screen flex flex-col">
+    <!-- Başlık Çubuğu -->
+    <div class="drag-area bg-gray-800 flex items-center justify-between px-4">
+        <h1 class="text-lg font-semibold">Çalışma zamanlayıcısı</h1>
+        <!-- Her Zaman Üstte Butonu -->
+        <label class="always-on-top-btn flex items-center space-x-2">
+            <input type="checkbox" id="alwaysOnTopCheckbox" class="form-checkbox h-4 w-4">
+            <span class="text-sm">Her Zaman Üstte</span>
+        </label>
+    </div>
+
+    <!-- Ana İçerik -->
+    <div class="flex-1 p-6 flex flex-col items-center">
+        <div class="w-full max-w-xs space-y-4">
+            <!-- Inputlar ve Butonlar -->
+            <div class="space-y-2">
+                <div class="flex flex-col">
+                    <label class="mb-1 text-gray-400">Çalışma (dakika)</label>
+                    <input id="work" type="number" min="1" value="25"
+                           class="bg-gray-800 text-white p-2 rounded">
+                </div>
+                <div class="flex flex-col">
+                    <label class="mb-1 text-gray-400">Mola (dakika)</label>
+                    <input id="break" type="number" min="1" value="5"
+                           class="bg-gray-800 text-white p-2 rounded">
+                </div>
+                <div class="flex flex-col">
+                    <label class="mb-1 text-gray-400">Tekrar</label>
+                    <input id="repeat" type="number" min="1" value="4"
+                           class="bg-gray-800 text-white p-2 rounded">
+                </div>
+            </div>
+
+            <div class="flex space-x-2">
+                <button id="startBtn"
+                        class="flex-1 bg-green-600 hover:bg-green-700 py-2 rounded">
+                    Başlat
+                </button>
+                <button id="pauseBtn" disabled
+                        class="flex-1 bg-yellow-600 hover:bg-yellow-700 py-2 rounded disabled:opacity-50">
+                    Durdur
+                </button>
+                <button id="resetBtn" disabled
+                        class="flex-1 bg-red-600 hover:bg-red-700 py-2 rounded disabled:opacity-50">
+                    Sıfırla
+                </button>
+            </div>
+
+            <!-- Timer Göstergesi -->
+            <div id="timerDisplay" class="text-center py-4 hidden">
+                <div id="time" class="text-5xl font-mono mb-2">00:00</div>
+                <div id="status" class="text-gray-400"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const startBtn = document.getElementById('startBtn');
+    const pauseBtn = document.getElementById('pauseBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    const timerDisplay = document.getElementById('timerDisplay');
+    const timeElement = document.getElementById('time');
+    const statusElement = document.getElementById('status');
+    const alwaysOnTopCheckbox = document.getElementById('alwaysOnTopCheckbox');
+
+    let isPaused = false;
+
+    // Ses çalma fonksiyonu
+    function playSound(soundId) {
+        const soundElement = document.getElementById(soundId);
+        if (soundElement) {
+            soundElement.currentTime = 0; // Sesi başa sar
+            soundElement.volume = 0.5;
+            soundElement.play(); // Sesi çal
+
+            // Sistem seslerini %5'e düşür
+            electronAPI.lowerSystemVolume();
+
+            // 5 saniye sonra sesi durdur
+            setTimeout(() => {
+                soundElement.pause(); // Sesi durdur
+                soundElement.currentTime = 0; // Sesi başa sar
+                electronAPI.restoreSystemVolume(); // Sistem seslerini eski haline getir
+            }, 5000); // 5000 ms = 5 saniye
+        }
+    }
+
+    // Her Zaman Üstte Butonu
+    alwaysOnTopCheckbox.addEventListener('change', (event) => {
+        electronAPI.setAlwaysOnTop(event.target.checked);
+    });
+
+    // Timer güncellemelerini dinle
+    electronAPI.onTimerUpdate((event, { time, mode, cycle }) => {
+        timerDisplay.classList.remove('hidden');
+        timeElement.textContent = time;
+        statusElement.textContent = `${mode === 'work' ? 'Çalışma' : 'Mola'} • Tekrar ${cycle}`;
+    });
+
+    electronAPI.onSessionSwitch((event, mode) => {
+        electronAPI.lowerVolume();
+        if (mode === 'work') {
+            playSound('workSound');
+        } else {
+            playSound('breakSound');
+        }
+    });
+
+
+    // Timer tamamlandığında
+    electronAPI.onTimerComplete(() => {
+        timerDisplay.classList.add('hidden');
+        startBtn.disabled = false;
+        pauseBtn.disabled = true;
+        resetBtn.disabled = true;
+        new Notification('Tamamlandı!', { body: 'Tüm seanslar tamamlandı!' });
+    });
+
+    // Timer durdurulduğunda
+    electronAPI.onTimerPaused(() => {
+        pauseBtn.textContent = 'Devam Et';
+        isPaused = true;
+        electronAPI.lowerVolume(); // Ses seviyesini azalt
+    });
+
+    // Timer devam ettirildiğinde
+    electronAPI.onTimerResumed(() => {
+        pauseBtn.textContent = 'Durdur';
+        isPaused = false;
+    });
+
+    // Başlat butonu
+    startBtn.addEventListener('click', async () => {
+        const settings = {
+            work: parseInt(document.getElementById('work').value),
+            break: parseInt(document.getElementById('break').value),
+            repeat: parseInt(document.getElementById('repeat').value)
+        };
+
+        startBtn.disabled = true;
+        pauseBtn.disabled = false;
+        resetBtn.disabled = false;
+
+        await electronAPI.startTimer(settings);
+    });
+
+    // Durdur/Devam Et butonu
+    pauseBtn.addEventListener('click', () => {
+        if (isPaused) {
+            electronAPI.resumeTimer();
+        } else {
+            electronAPI.pauseTimer();
+        }
+    });
+
+    // Sıfırla butonu
+    resetBtn.addEventListener('click', () => {
+        electronAPI.resetTimer();
+        timerDisplay.classList.add('hidden');
+        startBtn.disabled = false;
+        pauseBtn.disabled = true;
+        resetBtn.disabled = true;
+        pauseBtn.textContent = 'Durdur';
+        isPaused = false;
+    });
+</script>
 </body>
 </html>

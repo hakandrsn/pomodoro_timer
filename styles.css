@@ -1,0 +1,23 @@
+﻿body {
+    margin: 0;
+}
+.titlebar {
+    height: 30px;
+    background: blue;
+    color: white;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    app-region: drag;
+}
+
+#titleBar {
+    -webkit-app-region: drag; /* Sürüklenebilir alan */
+    width: 100%;
+    height: 8%;
+}
+
+#countdown {
+    transition: all 0.3s ease;
+    font-family: 'Segoe UI', system-ui;
+}
